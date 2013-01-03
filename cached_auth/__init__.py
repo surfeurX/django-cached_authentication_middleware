@@ -8,16 +8,10 @@ from django.db.models.signals import post_save, post_delete
 from django.utils.functional import SimpleLazyObject
 
 from django.contrib.auth.models import AnonymousUser, User
-
+from social_auth.db.django_models import UserSocialAuth
+from profil.models import Profil
 
 CACHE_KEY = 'cached_auth_middleware:%s'
-
-
-try:
-    app_label, model_name = settings.AUTH_PROFILE_MODULE.split('.')
-    profile_model = models.get_model(app_label, model_name)
-except (ValueError, AttributeError):
-    profile_model = None
 
 
 def invalidate_cache(sender, instance, **kwargs):
@@ -38,14 +32,11 @@ def get_cached_user(request):
 
         if user is None:
             user = get_user(request)
-
-            # Try to populate profile cache if profile is installed
-            if profile_model:
-                try:
-                    user.get_profile()
-                # Handle exception for user with no profile and AnonymousUser
-                except (profile_model.DoesNotExist, AttributeError):
-                    pass
+            user.get_profile()
+            try:
+                user.social = user.social_auth.get()
+            except UserSocialAuth.DoesNotExist:
+                user.social = None
             cache.set(key, user)
         request._cached_user = user
     return request._cached_user
@@ -56,9 +47,10 @@ class Middleware(object):
     def __init__(self):
         post_save.connect(invalidate_cache, sender=User)
         post_delete.connect(invalidate_cache, sender=User)
-        if profile_model:
-            post_save.connect(invalidate_cache, sender=profile_model)
-            post_delete.connect(invalidate_cache, sender=profile_model)
+        post_save.connect(invalidate_cache, sender=Profil)
+        post_delete.connect(invalidate_cache, sender=Profil)
+        post_save.connect(invalidate_cache, sender=UserSocialAuth)
+        post_delete.connect(invalidate_cache, sender=UserSocialAuth)
 
     def process_request(self, request):
         assert hasattr(request, 'session'), "The Django authentication middleware requires session middleware to be installed. Edit your MIDDLEWARE_CLASSES setting to insert 'django.contrib.sessions.middleware.SessionMiddleware'."
