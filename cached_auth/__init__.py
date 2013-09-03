@@ -34,8 +34,8 @@ def get_cached_user(request):
             user = get_user(request)
             user.get_profile()
             try:
-                user.social = user.social_auth.get()
-            except UserSocialAuth.DoesNotExist:
+                user.social = user.social_auth.all()[0]
+            except IndexError:
                 user.social = None
             cache.set(key, user)
         request._cached_user = user
